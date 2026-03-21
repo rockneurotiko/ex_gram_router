@@ -352,7 +352,37 @@ Implement the `ExGram.Router.Filter` behaviour:
 
 `call/3` returns `true` to pass (scope matches) or `false` to fail (skip scope).
 
+**Filters must be pure.** They are called on every matching update, potentially
+many times as the router walks the scope tree, and their result must depend only
+on the data already present in `update_info` and `context`. Never perform
+database queries, HTTP calls, or other side effects inside a filter — doing so
+couples routing decisions to I/O latency and makes the router unpredictable
+under load. If a filter needs external data (user role, feature flag, account
+status), load it once in a middleware before the router runs and store the result
+in `context.extra`. The filter then reads the pre-loaded value cheaply.
+
 ### Example: Role-based filter
+
+Filters should not perform I/O (database or HTTP calls). Instead, load the user
+role in a middleware and store it in `context.extra`. The filter then reads the
+pre-loaded value:
+
+```elixir
+defmodule MyApp.Middleware.LoadRole do
+  use ExGram.Middleware
+
+  def call(context, _opts) do
+    case ExGram.Dsl.extract_user(context) do
+      {:ok, user} ->
+        role = MyApp.Accounts.get_role(user.id)
+        add_extra(context, %{role: role})
+
+      :error ->
+        context
+    end
+  end
+end
+```
 
 ```elixir
 defmodule MyApp.Filters.Role do
@@ -360,19 +390,19 @@ defmodule MyApp.Filters.Role do
 
   @impl ExGram.Router.Filter
   def call(_update_info, context, required_role) do
-    {:ok, user} = ExGram.Dsl.extract_user(context)
-    MyApp.Accounts.get_role(user.id) == required_role
+    Map.get(context.extra, :role) == required_role
   end
 end
 ```
 
-Register the alias and use it:
+Register the middleware and the alias, then use the filter:
 
 ```elixir
 defmodule MyApp.Bot do
   use ExGram.Bot, name: :my_bot
   use ExGram.Router
 
+  middleware MyApp.Middleware.LoadRole
   alias_filter MyApp.Filters.Role, as: :role
 
   scope do
