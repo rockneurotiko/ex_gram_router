@@ -26,10 +26,10 @@ any runtime predicate: conversation state, user roles, feature flags, and more.
   - [alias_filter](#alias_filter)
 - [Built-in Filters](#built-in-filters)
 - [Handler Arities](#handler-arities)
+- [Mix Task](#mix-task)
 - [Custom Filters](#custom-filters)
 - [Nested Scopes and State Machines](#nested-scopes-and-state-machines)
 - [Testing](#testing)
-- [Introspection](#introspection)
 
 ---
 
@@ -307,6 +307,41 @@ end
 
 ---
 
+## Mix Task
+
+`ExGram.Router` ships with a Mix task that prints the routing tree of any bot
+module in a human-readable format. Useful for debugging, code review, and
+understanding how updates will be dispatched at a glance.
+
+```
+mix ex_gram.router.tree MyApp.Bot
+```
+
+Example output:
+
+```
+MyApp.Bot routing tree:
+├── scope
+│   ├── filters: [Command(:start)]
+│   └── handle: &MyApp.Handlers.start/1
+├── scope
+│   ├── filters: [Command(:help)]
+│   └── handle: &MyApp.Handlers.help/1
+└── scope
+    ├── filters: [Flow(:registration)]
+    ├── scope
+    │   ├── filters: [State(:get_name), Text]
+    │   └── handle: &MyApp.Handlers.got_name/1
+    └── scope
+        ├── filters: [State(:get_email), Text]
+        └── handle: &MyApp.Handlers.got_email/1
+```
+
+The module must `use ExGram.Router` — the task calls `__exgram_routing_tree__/0`
+which is generated at compile time.
+
+---
+
 ## Custom Filters
 
 Implement the `ExGram.Router.Filter` behaviour:
@@ -376,68 +411,121 @@ end
 Scopes can be arbitrarily nested. A nested scope only runs if its parent's
 filters have already passed, so parent filters act as guards for all children.
 
-This makes it natural to model multi-step conversation flows:
+This makes it natural to model multi-step conversation flows. The recommended
+way to manage conversation state is [ExGram.FSM](https://github.com/rockneurotiko/ex_gram_fsm),
+a companion library that provides finite state machine flows with pluggable
+storage backends. When both libraries are used together, `ExGram.FSM`
+automatically registers `:fsm_flow` and `:fsm_state` filter aliases.
+
+### Setup
+
+Add `ex_gram_fsm` alongside `ex_gram_router` in `mix.exs`:
+
+```elixir
+def deps do
+  [
+    {:ex_gram, "~> 0.60"},
+    {:ex_gram_router, "~> 0.1.0"},
+    {:ex_gram_fsm, "~> 0.1.0"},
+    {:jason, ">= 1.0.0"},
+    {:req, "~> 0.5"}
+  ]
+end
+```
+
+### Define a flow
+
+Each conversation flow is a separate module:
+
+```elixir
+defmodule MyApp.RegistrationFlow do
+  use ExGram.FSM.Flow, name: :registration
+
+  defstates do
+    state :get_name,  to: [:get_email]
+    state :get_email, to: [:done]
+    state :done,      to: []
+  end
+
+  def default_state, do: :get_name
+end
+```
+
+### Wire it into the bot
+
+`use ExGram.Router` before `use ExGram.FSM`. The `:fsm_flow` and `:fsm_state`
+filter aliases are registered automatically.
 
 ```elixir
 defmodule MyApp.Bot do
-  use ExGram.Bot, name: :my_bot
+  use ExGram.Bot, name: :my_bot, setup_commands: true
   use ExGram.Router
+  use ExGram.FSM,
+    storage: ExGram.FSM.Storage.ETS,
+    flows: [MyApp.RegistrationFlow]
 
-  alias_filter MyApp.Filters.State, as: :state
+  command("register", description: "Start registration")
 
-  command("start",  description: "Start")
-  command("cancel", description: "Cancel")
-
-  # /start is always available
   scope do
-    filter :command, :start
-    handle &MyApp.Handlers.start/1
+    filter :command, :register
+    handle &MyApp.Handlers.start_registration/1
   end
 
-  # Registration flow — only active when state == :registration
+  # Route by flow, then by step within the flow
   scope do
-    filter :state, :registration
+    filter :fsm_flow, :registration
 
-    # Step 1: waiting for name
     scope do
+      filter :fsm_state, :get_name
       filter :text
-      filter :state, {:sub_state, :get_name}
       handle &MyApp.Handlers.got_name/1
     end
 
-    # Step 2: waiting for email
     scope do
+      filter :fsm_state, :get_email
       filter :text
-      filter :state, {:sub_state, :get_email}
       handle &MyApp.Handlers.got_email/1
     end
-
-    # Cancel is available at any registration step
-    scope do
-      filter :command, :cancel
-      handle &MyApp.Handlers.cancel/1
-    end
   end
 
-  # Ordering flow
-  scope do
-    filter :state, :ordering
-
-    scope do
-      filter :callback_query, ~r/^item_\d+$/
-      handle &MyApp.Handlers.item_selected/2
-    end
-
-    scope do
-      filter :callback_query, "checkout"
-      handle &MyApp.Handlers.checkout/1
-    end
-  end
-
-  # Global fallback
   scope do
     handle &MyApp.Handlers.fallback/1
   end
+end
+```
+
+### Handlers
+
+```elixir
+defmodule MyApp.Handlers do
+  import ExGram.Dsl
+
+  def start_registration(context) do
+    context
+    |> start_flow(:registration)
+    |> answer("What's your name?")
+  end
+
+  def got_name(context) do
+    name = context.update.message.text
+
+    context
+    |> update_data(%{name: name})
+    |> transition(:get_email)
+    |> answer("Got it, #{name}! What's your email?")
+  end
+
+  def got_email(context) do
+    %{name: name} = get_data(context)
+    email = context.update.message.text
+
+    context
+    |> update_data(%{email: email})
+    |> clear_flow()
+    |> answer("Done! Welcome, #{name} (#{email}).")
+  end
+
+  def fallback(context), do: context
 end
 ```
 
@@ -452,123 +540,15 @@ end
 
 ## Testing
 
-`ExGram.Router` works naturally with ExGram's built-in test adapter. No special
-setup is required beyond what ExGram already needs.
+`ExGram.Router` requires no special testing setup. Since the router generates a
+standard `handle/2` function, your bot works exactly like any other ExGram bot
+in tests — use `ExGram.Adapter.Test`, push updates, and assert on outgoing API
+calls as usual.
 
-### Configuration
-
-```elixir
-# config/test.exs
-config :ex_gram, adapter: ExGram.Adapter.Test
-```
-
-```elixir
-# config/config.exs — make sure test config is loaded
-import Config
-
-# ... other config ...
-
-if File.exists?("config/#{config_env()}.exs") do
-  import_config "#{config_env()}.exs"
-end
-```
-
-### Test Setup
-
-```elixir
-defmodule MyApp.BotTest do
-  use ExUnit.Case, async: false
-  use ExGram.Test
-
-  defp build_message_update(text, chat_id \\ 123) do
-    %ExGram.Model.Update{
-      update_id: System.unique_integer([:positive]),
-      message: %ExGram.Model.Message{
-        message_id: System.unique_integer([:positive]),
-        date: 1_700_000_000,
-        from: %ExGram.Model.User{id: 1, is_bot: false, first_name: "Test"},
-        chat: %ExGram.Model.Chat{id: chat_id, type: "private"},
-        text: text
-      }
-    }
-  end
-
-  setup context do
-    ExGram.Test.stub(fn
-      :send_message, _body -> {:ok, %{message_id: 1}}
-      :get_me, _body       -> {:ok, %{id: 1, is_bot: true, first_name: "Bot"}}
-      _action, _body       -> {:ok, %{}}
-    end)
-
-    {bot_name, _} = ExGram.Test.start_bot(context, MyApp.Bot)
-    {:ok, bot_name: bot_name}
-  end
-
-  test "/start sends welcome message", %{bot_name: bot_name} do
-    ExGram.Test.expect(:send_message, fn body ->
-      assert body[:text] == "Welcome!"
-      {:ok, %{message_id: 1}}
-    end)
-
-    ExGram.Test.push_update(bot_name, build_message_update("/start"))
-  end
-
-  test "unknown text falls back", %{bot_name: bot_name} do
-    ExGram.Test.expect(:send_message, fn body ->
-      assert body[:text] == "I don't understand that."
-      {:ok, %{message_id: 1}}
-    end)
-
-    ExGram.Test.push_update(bot_name, build_message_update("hello?"))
-  end
-end
-```
-
-### Testing State-Gated Scopes
-
-Pass `extra_info:` to `ExGram.Test.start_bot/3` to pre-seed `context.extra`:
-
-```elixir
-test "routes to got_name handler during registration", context do
-  {bot_name, _} = ExGram.Test.start_bot(context, MyApp.Bot,
-    extra_info: %{state: :registration, sub_state: :get_name}
-  )
-
-  ExGram.Test.expect(:send_message, fn body ->
-    assert body[:text] == "Got your name!"
-    {:ok, %{message_id: 1}}
-  end)
-
-  ExGram.Test.push_update(bot_name, build_message_update("John Doe"))
-end
-```
+See the [ExGram testing documentation](https://hexdocs.pm/ex_gram/testing.html)
+for full setup instructions.
 
 ---
-
-## Introspection
-
-At compile time, `ExGram.Router` generates a `__exgram_routing_tree__/0`
-function that returns the compiled scope tree as a list of `ExGram.Router.Scope`
-structs. This is useful for debugging and for writing tests that assert on the
-routing structure:
-
-```elixir
-iex> MyApp.Bot.__exgram_routing_tree__()
-[
-  %ExGram.Router.Scope{filters: [{ExGram.Router.Filters.Command, :start}], handler: ...},
-  %ExGram.Router.Scope{filters: [{ExGram.Router.Filters.Command, :help}], handler: ...},
-  ...
-]
-```
-
-```elixir
-test "routing tree is well-formed" do
-  tree = MyApp.Bot.__exgram_routing_tree__()
-  assert is_list(tree)
-  assert length(tree) > 0
-  Enum.each(tree, fn scope -> assert %ExGram.Router.Scope{} = scope end)
-end
-```
 
 ## License
 
