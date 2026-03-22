@@ -112,6 +112,122 @@ defmodule ExGram.Router.DispatcherTest do
     end
   end
 
+  describe "dispatch/3 - scope_extra enrichment" do
+    # A filter that always passes and enriches context.extra with a marker
+    defmodule EnrichingFilter do
+      @behaviour ExGram.Router.Filter
+
+      def call(_update_info, _ctx, _opts), do: true
+
+      def scope_extra(_context, opts) do
+        key = Keyword.get(opts, :key, :enriched)
+        value = Keyword.get(opts, :value, true)
+        %{key => value}
+      end
+    end
+
+    # A filter that always passes but does not implement scope_extra
+    defmodule PlainPassFilter do
+      @behaviour ExGram.Router.Filter
+
+      def call(_update_info, _ctx, _opts), do: true
+    end
+
+    defmodule ExtraCheckHandler do
+      def handle(context), do: context
+    end
+
+    test "scope_extra result is merged into context.extra for child scopes" do
+      tree = [
+        %Scope{
+          children: [
+            %Scope{
+              filters: [],
+              handler: {ExtraCheckHandler, :handle, 1}
+            }
+          ],
+          filters: [{EnrichingFilter, [key: :my_flag, value: :hello]}]
+        }
+      ]
+
+      result = Dispatcher.dispatch({:text, "hi", %{}}, ctx(), tree)
+      assert result.extra[:my_flag] == :hello
+    end
+
+    test "scope_extra is not called when filter fails" do
+      tree = [
+        %Scope{
+          children: [
+            %Scope{
+              filters: [],
+              handler: {ExtraCheckHandler, :handle, 1}
+            }
+          ],
+          filters: [{AlwaysFalse, nil}]
+        },
+        %Scope{filters: [], handler: {Handlers, :fallback, 1}}
+      ]
+
+      result = Dispatcher.dispatch({:text, "hi", %{}}, ctx(), tree)
+      assert result.handled_by == :fallback
+      refute Map.has_key?(result.extra, :enriched)
+    end
+
+    test "filter without scope_extra does not enrich context" do
+      tree = [
+        %Scope{
+          children: [
+            %Scope{
+              filters: [],
+              handler: {ExtraCheckHandler, :handle, 1}
+            }
+          ],
+          filters: [{PlainPassFilter, []}]
+        }
+      ]
+
+      result = Dispatcher.dispatch({:text, "hi", %{}}, ctx(), tree)
+      assert result.extra == %{}
+    end
+
+    test "sibling scopes do not see enrichment from other branches" do
+      # Branch 1: enriches and dispatches to a non-matching child → :no_match
+      # Branch 2: should NOT see the enrichment; just a plain fallback
+      tree = [
+        %Scope{
+          filters: [{EnrichingFilter, [key: :sibling_flag, value: true]}],
+          children: [
+            # Child that won't match
+            %Scope{filters: [{AlwaysFalse, nil}], handler: {Handlers, :handle_one, 1}}
+          ]
+        },
+        %Scope{filters: [], handler: {Handlers, :fallback, 1}}
+      ]
+
+      result = Dispatcher.dispatch({:text, "hi", %{}}, ctx(), tree)
+      assert result.handled_by == :fallback
+      refute Map.has_key?(result.extra, :sibling_flag)
+    end
+
+    test "multiple enriching filters in the same scope accumulate into context" do
+      tree = [
+        %Scope{
+          children: [
+            %Scope{filters: [], handler: {ExtraCheckHandler, :handle, 1}}
+          ],
+          filters: [
+            {EnrichingFilter, [key: :flag_a, value: 1]},
+            {EnrichingFilter, [key: :flag_b, value: 2]}
+          ]
+        }
+      ]
+
+      result = Dispatcher.dispatch({:text, "hi", %{}}, ctx(), tree)
+      assert result.extra[:flag_a] == 1
+      assert result.extra[:flag_b] == 2
+    end
+  end
+
   describe "dispatch/3 - branch scopes (children)" do
     test "routes through branch into matching child" do
       tree = [

@@ -10,9 +10,14 @@ defmodule ExGram.Router.Dispatcher do
 
   1. Iterate over top-level scopes in declaration order.
   2. For each scope, evaluate all filters (AND logic, short-circuit on first false).
-  3. If filters pass and the scope is a leaf (has a handler), call the handler.
-  4. If filters pass and the scope is a branch (has children), recurse into children.
-  5. If no scope matches, return the context unchanged (no-op).
+  3. After each passing filter, call `scope_extra/2` if implemented — the returned
+     map is merged into `context.extra` before proceeding to remaining filters and
+     child scopes. Sibling scopes receive the original, un-enriched context.
+  4. If all filters pass and the scope is a leaf (has a handler), call the handler
+     with the enriched context.
+  5. If all filters pass and the scope is a branch (has children), recurse into
+     children with the enriched context.
+  6. If no scope matches, return the context unchanged (no-op).
   """
 
   alias ExGram.Router.Scope
@@ -48,28 +53,43 @@ defmodule ExGram.Router.Dispatcher do
   end
 
   defp match_scope(update_info, context, %Scope{} = scope) do
-    if all_filters_pass?(update_info, context, scope.filters) do
-      case scope.children do
-        [] ->
-          # Leaf: invoke handler
-          {:ok, call_handler(update_info, context, scope.handler)}
+    case apply_filters(update_info, context, scope.filters) do
+      {:pass, enriched_context} ->
+        case scope.children do
+          [] ->
+            # Leaf: invoke handler with enriched context
+            {:ok, call_handler(update_info, enriched_context, scope.handler)}
 
-        children ->
-          # Branch: recurse into children
-          match_scopes(update_info, context, children)
-      end
-    else
-      :no_match
+          children ->
+            # Branch: recurse into children with enriched context
+            match_scopes(update_info, enriched_context, children)
+        end
+
+      :no_match ->
+        :no_match
     end
   end
 
-  defp all_filters_pass?(_update_info, _context, []), do: true
+  # Iterates filters with AND logic. After each passing filter, calls
+  # `scope_extra/2` (if implemented) and merges the result into context.extra.
+  # Returns {:pass, enriched_context} or :no_match.
+  defp apply_filters(_update_info, context, []) do
+    {:pass, context}
+  end
 
-  defp all_filters_pass?(update_info, context, [{module, opts} | rest]) do
+  defp apply_filters(update_info, context, [{module, opts} | rest]) do
     if module.call(update_info, context, opts) do
-      all_filters_pass?(update_info, context, rest)
+      enriched_context =
+        if function_exported?(module, :scope_extra, 2) do
+          extra = module.scope_extra(context, opts)
+          %{context | extra: Map.merge(context.extra, extra)}
+        else
+          context
+        end
+
+      apply_filters(update_info, enriched_context, rest)
     else
-      false
+      :no_match
     end
   end
 

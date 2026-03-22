@@ -34,8 +34,8 @@ defmodule ExGram.Router.Filters.Text do
   @impl ExGram.Router.Filter
   def call({:text, _text, _msg}, _context, nil), do: true
 
-  def call({:text, text, _msg}, _context, match) do
-    ExGram.Router.Filter.text_filter(text, match)
+  def call({:text, text, _msg}, context, match) do
+    ExGram.Router.Filter.text_filter(text, match, context)
   end
 
   def call(_update_info, _context, _opts), do: false

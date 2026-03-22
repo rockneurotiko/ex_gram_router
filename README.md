@@ -25,6 +25,7 @@ any runtime predicate: conversation state, user roles, feature flags, and more.
   - [handle](#handle)
   - [alias_filter](#alias_filter)
 - [Built-in Filters](#built-in-filters)
+- [Enrich Filters](#enrich-filters)
 - [Handler Arities](#handler-arities)
 - [Mix Task](#mix-task)
 - [Custom Filters](#custom-filters)
@@ -232,7 +233,7 @@ without any `alias_filter` declaration:
 |-------------------|--------------------------|-------------------------------------------------------------------------------------------------|
 | `:command`        | `{:command, name, msg}`  | `nil` (any), atom/string (specific command name)                                                |
 | `:text`           | `{:text, text, msg}`     | `nil` (any), string (exact match), `%Regex{}` (regex), `prefix:`, `suffix:`, `contains:`       |
-| `:callback_query` | `{:callback_query, cq}`  | `nil` (any), string (exact data), `%Regex{}` (regex), `prefix:`, `suffix:`, `contains:`        |
+| `:callback_query` | `{:callback_query, cq}`  | `nil` (any), string (exact data), `%Regex{}` (regex), `prefix:`, `suffix:`, `contains:`; add `propagate: true` to a `prefix:` match to enrich child scopes (see [Enrich Filters](#enrich-filters)) |
 | `:inline_query`   | `{:inline_query, iq}`    | `nil` (any), string (exact query), `%Regex{}` (regex), `prefix:`, `suffix:`, `contains:`       |
 | `:regex`          | `{:regex, name, msg}`    | `nil` (any), atom (specific named regex)                                                        |
 | `:message`        | `{:message, msg}`        | `nil` only (matches any message-type update)                                                    |
@@ -277,6 +278,10 @@ filter :callback_query, prefix: "settings:"
 filter :callback_query, suffix: ":confirm"
 filter :callback_query, contains: "item"
 
+# Callback query prefix with propagation — child scopes match against the remainder
+# "proj:change", "proj:delete", etc. — see Enrich Filters for details
+filter :callback_query, prefix: "proj:", propagate: true
+
 # Any inline query
 filter :inline_query
 
@@ -289,6 +294,92 @@ filter :location
 # Any message-type update (photos, documents, stickers, etc.)
 filter :message
 ```
+
+---
+
+## Enrich Filters
+
+Filters can optionally implement the `scope_extra/2` callback to **enrich `context.extra` for child scopes** after they pass. This is how a parent scope can pass derived data down to its children without the children having to re-derive it.
+
+```elixir
+@callback scope_extra(context :: ExGram.Cnt.t(), opts :: term()) :: map()
+```
+
+`scope_extra/2` is called by the dispatcher right after `call/3` returns `true`. The map it returns is merged into `context.extra` via `Map.merge/2` before the dispatcher recurses into child scopes. Sibling scopes always receive the original, un-enriched context — isolation is automatic thanks to Elixir's immutable data.
+
+The callback is `@optional_callbacks` — existing filters that do not implement it are completely unaffected.
+
+### Implementing `scope_extra/2`
+
+```elixir
+defmodule MyApp.Filters.Project do
+  @behaviour ExGram.Router.Filter
+
+  @impl ExGram.Router.Filter
+  def call(_update_info, context, project_id) do
+    Map.get(context.extra, :project_id) == project_id
+  end
+
+  # Called after call/3 returns true — child scopes get context.extra.project
+  @impl ExGram.Router.Filter
+  def scope_extra(_context, project_id) do
+    %{project: MyApp.Projects.get!(project_id)}
+  end
+end
+```
+
+Child scopes then have `context.extra.project` available without any extra lookup:
+
+```elixir
+scope do
+  filter MyApp.Filters.Project, 42
+
+  scope do
+    filter :text
+    # context.extra.project is already loaded here
+    handle &MyHandlers.handle_text/1
+  end
+end
+```
+
+### Built-in: `:callback_query` with `propagate: true`
+
+The built-in `:callback_query` filter uses `scope_extra/2` to implement **prefix propagation**. When a `prefix:` match includes `propagate: true`, the matched prefix is stored in `context.extra` so that child scopes can match against the remainder of the callback data without repeating it:
+
+```elixir
+scope do
+  filter :callback_query, prefix: "proj:", propagate: true
+
+  scope do
+    filter :callback_query, "change"   # matches "proj:change"
+    handle &MyHandlers.change_project/1
+  end
+
+  scope do
+    filter :callback_query, "delete"   # matches "proj:delete"
+    handle &MyHandlers.delete_project/1
+  end
+end
+```
+
+Propagation stacks: a child scope can itself propagate, accumulating prefixes across nesting levels:
+
+```elixir
+scope do
+  filter :callback_query, prefix: "proj:", propagate: true
+
+  scope do
+    filter :callback_query, prefix: "settings:", propagate: true
+
+    scope do
+      filter :callback_query, "volume"   # matches "proj:settings:volume"
+      handle &MyHandlers.volume/1
+    end
+  end
+end
+```
+
+The `mix ex_gram.router.tree` task marks propagating filters with a `[propagate]` indicator.
 
 ---
 
@@ -366,7 +457,7 @@ Implement the `ExGram.Router.Filter` behaviour:
 @callback call(update_info :: tuple(), context :: ExGram.Cnt.t(), opts :: term()) :: boolean()
 ```
 
-`call/3` returns `true` to pass (scope matches) or `false` to fail (skip scope).
+`call/3` returns `true` to pass (scope matches) or `false` to fail (skip scope). Optionally, implement `scope_extra/2` to enrich `context.extra` for child scopes — see [Enrich Filters](#enrich-filters).
 
 **Filters must be pure.** They are called on every matching update, potentially
 many times as the router walks the scope tree, and their result must depend only

@@ -3,7 +3,7 @@ defmodule ExGram.Router.Filters.TextTest do
 
   alias ExGram.Router.Filters.Text
 
-  @ctx %{}
+  @ctx %ExGram.Cnt{}
 
   describe "call/3" do
     test "matches any text when opts is nil" do

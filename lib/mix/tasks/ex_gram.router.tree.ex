@@ -131,6 +131,16 @@ defmodule Mix.Tasks.ExGram.Router.Tree do
     short_name(module)
   end
 
+  defp format_filter({module, opts}) when is_list(opts) do
+    if Keyword.get(opts, :propagate, false) do
+      clean_opts = Keyword.delete(opts, :propagate)
+      base = if clean_opts == [], do: short_name(module), else: "#{short_name(module)}(#{inspect(clean_opts)})"
+      base <> " [propagate]"
+    else
+      "#{short_name(module)}(#{inspect(opts)})"
+    end
+  end
+
   defp format_filter({module, opts}) do
     "#{short_name(module)}(#{inspect(opts)})"
   end

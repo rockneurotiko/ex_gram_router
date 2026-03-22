@@ -46,6 +46,12 @@ defmodule ExGram.RouterTest do
     def admin({:command, :admin, _}, context), do: answer(context, "Admin panel")
     def handle_text(context), do: answer(context, "Text received")
     def fallback(context), do: answer(context, "Fallback")
+
+    # callback_query propagation handlers
+    def change_project(context), do: answer_callback(context, context.update, text: "Change project")
+    def delete_project(context), do: answer_callback(context, context.update, text: "Delete project")
+    def volume(context), do: answer_callback(context, context.update, text: "Volume")
+    def mute(context), do: answer_callback(context, context.update, text: "Mute")
   end
 
   # ---------------------------------------------------------------------------
@@ -113,6 +119,25 @@ defmodule ExGram.RouterTest do
   # ---------------------------------------------------------------------------
   # Helpers
   # ---------------------------------------------------------------------------
+
+  defp build_callback_query_update(data, opts \\ []) do
+    user_id = Keyword.get(opts, :user_id, 456)
+
+    %ExGram.Model.Update{
+      callback_query: %ExGram.Model.CallbackQuery{
+        chat_instance: "chat_instance_#{System.unique_integer([:positive])}",
+        data: data,
+        from: %ExGram.Model.User{
+          first_name: "Test",
+          id: user_id,
+          is_bot: false,
+          username: "test_user"
+        },
+        id: "cq_#{System.unique_integer([:positive])}"
+      },
+      update_id: System.unique_integer([:positive])
+    }
+  end
 
   defp build_message_update(text, opts \\ []) do
     chat_id = Keyword.get(opts, :chat_id, 123)
@@ -259,6 +284,122 @@ defmodule ExGram.RouterTest do
       end)
 
       ExGram.Test.push_update(bot_name, build_message_update("/admin"))
+    end
+  end
+
+  # ---------------------------------------------------------------------------
+  # Support: a second bot for callback_query propagation tests
+  # ---------------------------------------------------------------------------
+
+  defmodule PropagatingBot do
+    use ExGram.Bot, name: :test_propagating_bot
+    use ExGram.Router
+
+    # Parent scope: prefix "proj:" propagates to children
+    scope do
+      filter(:callback_query, prefix: "proj:", propagate: true)
+
+      scope do
+        filter(:callback_query, "change")
+        handle(&ExGram.RouterTest.Handlers.change_project/1)
+      end
+
+      scope do
+        filter(:callback_query, "delete")
+        handle(&ExGram.RouterTest.Handlers.delete_project/1)
+      end
+
+      # Nested propagation: "proj:settings:" prefix
+      scope do
+        filter(:callback_query, prefix: "settings:", propagate: true)
+
+        scope do
+          filter(:callback_query, "volume")
+          handle(&ExGram.RouterTest.Handlers.volume/1)
+        end
+
+        scope do
+          filter(:callback_query, "mute")
+          handle(&ExGram.RouterTest.Handlers.mute/1)
+        end
+      end
+    end
+
+    scope do
+      handle(&ExGram.RouterTest.Handlers.fallback/1)
+    end
+  end
+
+  defp start_propagating_bot(context) do
+    stub_all_ok()
+    ExGram.Test.start_bot(context, PropagatingBot)
+  end
+
+  describe "callback_query prefix propagation" do
+    setup context do
+      {bot_name, _} = start_propagating_bot(context)
+      {:ok, bot_name: bot_name}
+    end
+
+    test "parent prefix propagates: 'proj:change' routes to change_project handler",
+         %{bot_name: bot_name} do
+      ExGram.Test.expect(:answer_callback_query, fn body ->
+        assert body[:text] == "Change project"
+        {:ok, true}
+      end)
+
+      ExGram.Test.push_update(bot_name, build_callback_query_update("proj:change"))
+    end
+
+    test "parent prefix propagates: 'proj:delete' routes to delete_project handler",
+         %{bot_name: bot_name} do
+      ExGram.Test.expect(:answer_callback_query, fn body ->
+        assert body[:text] == "Delete project"
+        {:ok, true}
+      end)
+
+      ExGram.Test.push_update(bot_name, build_callback_query_update("proj:delete"))
+    end
+
+    test "nested prefix propagation: 'proj:settings:volume' routes to volume handler",
+         %{bot_name: bot_name} do
+      ExGram.Test.expect(:answer_callback_query, fn body ->
+        assert body[:text] == "Volume"
+        {:ok, true}
+      end)
+
+      ExGram.Test.push_update(bot_name, build_callback_query_update("proj:settings:volume"))
+    end
+
+    test "nested prefix propagation: 'proj:settings:mute' routes to mute handler",
+         %{bot_name: bot_name} do
+      ExGram.Test.expect(:answer_callback_query, fn body ->
+        assert body[:text] == "Mute"
+        {:ok, true}
+      end)
+
+      ExGram.Test.push_update(bot_name, build_callback_query_update("proj:settings:mute"))
+    end
+
+    test "callback without the parent prefix falls through to fallback",
+         %{bot_name: bot_name} do
+      ExGram.Test.expect(:send_message, fn body ->
+        assert body[:text] == "Fallback"
+        {:ok, %{message_id: 1, text: "Fallback"}}
+      end)
+
+      ExGram.Test.push_update(bot_name, build_callback_query_update("other:action"))
+    end
+
+    test "non-propagated prefix match does NOT route children without full prefix",
+         %{bot_name: bot_name} do
+      # "change" alone (without "proj:") should NOT match — it would need "proj:change"
+      ExGram.Test.expect(:send_message, fn body ->
+        assert body[:text] == "Fallback"
+        {:ok, %{message_id: 1, text: "Fallback"}}
+      end)
+
+      ExGram.Test.push_update(bot_name, build_callback_query_update("change"))
     end
   end
 
