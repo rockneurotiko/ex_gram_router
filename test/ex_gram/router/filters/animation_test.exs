@@ -3,17 +3,17 @@ defmodule ExGram.Router.Filters.AnimationTest do
 
   alias ExGram.Router.Filters.Animation
 
-  defp msg(overrides \\ []), do: struct(%ExGram.Model.Message{message_id: 1, date: 0}, overrides)
+  defp msg(overrides \\ []), do: struct(%ExGram.Model.Message{date: 0, message_id: 1}, overrides)
   defp ctx, do: %ExGram.Cnt{}
 
   describe "call/3" do
     test "returns true when message has an animation" do
       animation = %ExGram.Model.Animation{
+        duration: 3,
         file_id: "abc",
         file_unique_id: "u",
-        width: 320,
         height: 240,
-        duration: 3
+        width: 320
       }
 
       assert Animation.call({:message, msg(animation: animation)}, ctx(), nil) == true

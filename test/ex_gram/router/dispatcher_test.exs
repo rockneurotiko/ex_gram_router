@@ -116,11 +116,11 @@ defmodule ExGram.Router.DispatcherTest do
     test "routes through branch into matching child" do
       tree = [
         %Scope{
-          filters: [{AlwaysTrue, nil}],
           children: [
             %Scope{filters: [{MatchCommand, :start}], handler: {Handlers, :handle_one, 1}},
             %Scope{filters: [{MatchCommand, :help}], handler: {Handlers, :handle_two, 1}}
-          ]
+          ],
+          filters: [{AlwaysTrue, nil}]
         }
       ]
 
@@ -134,10 +134,10 @@ defmodule ExGram.Router.DispatcherTest do
     test "branch filters AND child filters both must pass" do
       tree = [
         %Scope{
-          filters: [{AlwaysFalse, nil}],
           children: [
             %Scope{filters: [], handler: {Handlers, :handle_one, 1}}
-          ]
+          ],
+          filters: [{AlwaysFalse, nil}]
         },
         %Scope{filters: [], handler: {Handlers, :fallback, 1}}
       ]
@@ -149,10 +149,10 @@ defmodule ExGram.Router.DispatcherTest do
     test "no match in branch falls through to next top-level scope" do
       tree = [
         %Scope{
-          filters: [{AlwaysTrue, nil}],
           children: [
             %Scope{filters: [{AlwaysFalse, nil}], handler: {Handlers, :handle_one, 1}}
-          ]
+          ],
+          filters: [{AlwaysTrue, nil}]
         },
         %Scope{filters: [], handler: {Handlers, :fallback, 1}}
       ]
@@ -164,15 +164,15 @@ defmodule ExGram.Router.DispatcherTest do
     test "deeply nested scopes work correctly" do
       tree = [
         %Scope{
-          filters: [{AlwaysTrue, nil}],
           children: [
             %Scope{
-              filters: [{AlwaysTrue, nil}],
               children: [
                 %Scope{filters: [{MatchCommand, :admin}], handler: {Handlers, :handle_one, 1}}
-              ]
+              ],
+              filters: [{AlwaysTrue, nil}]
             }
-          ]
+          ],
+          filters: [{AlwaysTrue, nil}]
         }
       ]
 

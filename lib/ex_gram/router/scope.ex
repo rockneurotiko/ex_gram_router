@@ -15,16 +15,16 @@ defmodule ExGram.Router.Scope do
   @type handler :: {module(), atom(), 1 | 2}
 
   @type t :: %__MODULE__{
-          filters: [filter()],
           children: [t()],
+          filters: [filter()],
           handler: handler() | nil
         }
 
-  defstruct filters: [], children: [], handler: nil
+  defstruct children: [], filters: [], handler: nil
 
   @doc """
   Returns true if the scope is a leaf node (has a handler and no children).
   """
-  def leaf?(%__MODULE__{handler: handler, children: []}) when not is_nil(handler), do: true
+  def leaf?(%__MODULE__{children: [], handler: handler}) when not is_nil(handler), do: true
   def leaf?(%__MODULE__{}), do: false
 end

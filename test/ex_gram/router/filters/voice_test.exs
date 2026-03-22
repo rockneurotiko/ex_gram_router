@@ -3,12 +3,12 @@ defmodule ExGram.Router.Filters.VoiceTest do
 
   alias ExGram.Router.Filters.Voice
 
-  defp msg(overrides \\ []), do: struct(%ExGram.Model.Message{message_id: 1, date: 0}, overrides)
+  defp msg(overrides \\ []), do: struct(%ExGram.Model.Message{date: 0, message_id: 1}, overrides)
   defp ctx, do: %ExGram.Cnt{}
 
   describe "call/3" do
     test "returns true when message has a voice message" do
-      voice = %ExGram.Model.Voice{file_id: "abc", file_unique_id: "u", duration: 5}
+      voice = %ExGram.Model.Voice{duration: 5, file_id: "abc", file_unique_id: "u"}
       assert Voice.call({:message, msg(voice: voice)}, ctx(), nil) == true
     end
 

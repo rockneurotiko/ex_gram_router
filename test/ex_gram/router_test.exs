@@ -119,19 +119,19 @@ defmodule ExGram.RouterTest do
     user_id = Keyword.get(opts, :user_id, 456)
 
     %ExGram.Model.Update{
-      update_id: System.unique_integer([:positive]),
       message: %ExGram.Model.Message{
-        message_id: System.unique_integer([:positive]),
+        chat: %ExGram.Model.Chat{id: chat_id, type: "private"},
         date: 1_700_000_000,
         from: %ExGram.Model.User{
+          first_name: "Test",
           id: user_id,
           is_bot: false,
-          first_name: "Test",
           username: "test_user"
         },
-        chat: %ExGram.Model.Chat{id: chat_id, type: "private"},
+        message_id: System.unique_integer([:positive]),
         text: text
-      }
+      },
+      update_id: System.unique_integer([:positive])
     }
   end
 
@@ -139,7 +139,7 @@ defmodule ExGram.RouterTest do
     ExGram.Test.stub(fn action, _body ->
       case action do
         :send_message -> {:ok, %{message_id: System.unique_integer([:positive]), text: "ok"}}
-        :get_me -> {:ok, %{id: 1, is_bot: true, first_name: "TestBot", username: "test_bot"}}
+        :get_me -> {:ok, %{first_name: "TestBot", id: 1, is_bot: true, username: "test_bot"}}
         _ -> {:ok, %{}}
       end
     end)

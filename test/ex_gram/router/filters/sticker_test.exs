@@ -3,7 +3,7 @@ defmodule ExGram.Router.Filters.StickerTest do
 
   alias ExGram.Router.Filters.Sticker
 
-  defp msg(overrides \\ []), do: struct(%ExGram.Model.Message{message_id: 1, date: 0}, overrides)
+  defp msg(overrides \\ []), do: struct(%ExGram.Model.Message{date: 0, message_id: 1}, overrides)
   defp ctx, do: %ExGram.Cnt{}
 
   describe "call/3" do
@@ -11,11 +11,11 @@ defmodule ExGram.Router.Filters.StickerTest do
       sticker = %ExGram.Model.Sticker{
         file_id: "abc",
         file_unique_id: "u",
-        type: "regular",
-        width: 512,
         height: 512,
         is_animated: false,
-        is_video: false
+        is_video: false,
+        type: "regular",
+        width: 512
       }
 
       assert Sticker.call({:message, msg(sticker: sticker)}, ctx(), nil) == true

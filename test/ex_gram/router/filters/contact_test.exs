@@ -3,12 +3,12 @@ defmodule ExGram.Router.Filters.ContactTest do
 
   alias ExGram.Router.Filters.Contact
 
-  defp msg(overrides \\ []), do: struct(%ExGram.Model.Message{message_id: 1, date: 0}, overrides)
+  defp msg(overrides \\ []), do: struct(%ExGram.Model.Message{date: 0, message_id: 1}, overrides)
   defp ctx, do: %ExGram.Cnt{}
 
   describe "call/3" do
     test "returns true when message has a contact" do
-      contact = %ExGram.Model.Contact{phone_number: "+1234567890", first_name: "Alice"}
+      contact = %ExGram.Model.Contact{first_name: "Alice", phone_number: "+1234567890"}
       assert Contact.call({:message, msg(contact: contact)}, ctx(), nil) == true
     end
 

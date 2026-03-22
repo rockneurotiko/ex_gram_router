@@ -3,7 +3,7 @@ defmodule ExGram.Router.Filters.DocumentTest do
 
   alias ExGram.Router.Filters.Document
 
-  defp msg(overrides \\ []), do: struct(%ExGram.Model.Message{message_id: 1, date: 0}, overrides)
+  defp msg(overrides \\ []), do: struct(%ExGram.Model.Message{date: 0, message_id: 1}, overrides)
   defp ctx, do: %ExGram.Cnt{}
 
   describe "call/3" do

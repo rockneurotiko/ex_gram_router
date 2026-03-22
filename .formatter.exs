@@ -5,5 +5,12 @@ dsl_macros = [scope: 1, filter: 1, filter: 2, handle: 1, alias_filter: 2]
   locals_without_parens: dsl_macros,
   plugins: [Quokka],
   line_length: 120,
-  export: [locals_without_parens: dsl_macros]
+  export: [locals_without_parens: dsl_macros],
+  quokka: [
+    autosort: [:map, :defstruct, :schema],
+    files: %{
+      included: ["lib/", "test/"],
+      excluded: []
+    }
+  ]
 ]

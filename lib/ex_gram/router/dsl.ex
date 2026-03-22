@@ -18,6 +18,9 @@ defmodule ExGram.Router.Dsl do
   consumed by `ExGram.Router.Compiler` in the `@before_compile` hook.
   """
 
+  @stack_attribute :__exgram_scope_stack__
+  @aliases_attribute :__exgram_filter_aliases__
+
   @doc """
   Opens a new routing scope. A scope can contain:
   - `filter` declarations (zero or more)
@@ -29,19 +32,18 @@ defmodule ExGram.Router.Dsl do
   defmacro scope(do: block) do
     quote do
       # Push a new empty scope onto the stack
-      current_stack = Module.get_attribute(__MODULE__, :__exgram_scope_stack__)
+      current_stack = ExGram.Router.Dsl.__get_stack(__MODULE__)
 
-      Module.put_attribute(
-        __MODULE__,
-        :__exgram_scope_stack__,
-        [%ExGram.Router.Scope{} | current_stack]
-      )
+      ExGram.Router.Dsl.__put_stack(__MODULE__, [%ExGram.Router.Scope{} | current_stack])
 
       # Expand the block contents (may add filters, handlers, nested scopes)
       unquote(block)
 
       # Pop the completed scope
-      [completed | rest_stack] = Module.get_attribute(__MODULE__, :__exgram_scope_stack__)
+      {completed, rest_stack} =
+        ExGram.Router.Dsl.__get_current_stack!(__MODULE__, "scope",
+          description: "empty scopes are not allowed; a scope must have filters, a handle, or nested scopes"
+        )
 
       # Validate the completed scope
       ExGram.Router.Dsl.__validate_scope__!(completed, __MODULE__)
@@ -51,12 +53,12 @@ defmodule ExGram.Router.Dsl do
           # Top-level scope: register it in @__exgram_scopes__
           # We prepend, so @before_compile must reverse to get declaration order
           Module.put_attribute(__MODULE__, :__exgram_scopes__, completed)
-          Module.put_attribute(__MODULE__, :__exgram_scope_stack__, [])
+          ExGram.Router.Dsl.__put_stack(__MODULE__, [])
 
         [parent | rest] ->
           # Nested scope: add as child of the parent scope
           updated_parent = %{parent | children: parent.children ++ [completed]}
-          Module.put_attribute(__MODULE__, :__exgram_scope_stack__, [updated_parent | rest])
+          ExGram.Router.Dsl.__put_stack(__MODULE__, [updated_parent | rest])
       end
     end
   end
@@ -78,14 +80,7 @@ defmodule ExGram.Router.Dsl do
   """
   defmacro filter(module_or_alias, opts \\ nil) do
     quote do
-      stack = Module.get_attribute(__MODULE__, :__exgram_scope_stack__)
-
-      if stack == [] do
-        raise CompileError,
-          file: __ENV__.file,
-          line: __ENV__.line,
-          description: "filter/1-2 must be called inside a scope block"
-      end
+      {current, rest} = ExGram.Router.Dsl.__get_current_stack!(__MODULE__, "filter/2")
 
       filter_module =
         ExGram.Router.Dsl.__resolve_filter_module__!(
@@ -94,9 +89,8 @@ defmodule ExGram.Router.Dsl do
           __ENV__
         )
 
-      [current | rest] = stack
       updated = %{current | filters: current.filters ++ [{filter_module, unquote(opts)}]}
-      Module.put_attribute(__MODULE__, :__exgram_scope_stack__, [updated | rest])
+      ExGram.Router.Dsl.__put_stack(__MODULE__, [updated | rest])
     end
   end
 
@@ -117,16 +111,7 @@ defmodule ExGram.Router.Dsl do
     handler = __parse_handler__!(func, __CALLER__)
 
     quote do
-      stack = Module.get_attribute(__MODULE__, :__exgram_scope_stack__)
-
-      if stack == [] do
-        raise CompileError,
-          file: __ENV__.file,
-          line: __ENV__.line,
-          description: "handle/1 must be called inside a scope block"
-      end
-
-      [current | rest] = stack
+      {current, rest} = ExGram.Router.Dsl.__get_current_stack!(__MODULE__, "handle/1")
 
       if current.handler != nil do
         raise CompileError,
@@ -136,7 +121,7 @@ defmodule ExGram.Router.Dsl do
       end
 
       updated = %{current | handler: unquote(Macro.escape(handler))}
-      Module.put_attribute(__MODULE__, :__exgram_scope_stack__, [updated | rest])
+      ExGram.Router.Dsl.__put_stack(__MODULE__, [updated | rest])
     end
   end
 
@@ -156,7 +141,7 @@ defmodule ExGram.Router.Dsl do
   """
   defmacro alias_filter(module, as: alias_atom) when is_atom(alias_atom) do
     quote do
-      current_aliases = Module.get_attribute(__MODULE__, :__exgram_filter_aliases__)
+      current_aliases = ExGram.Router.Dsl.__get_aliases(__MODULE__)
 
       if Keyword.has_key?(current_aliases, unquote(alias_atom)) do
         raise CompileError,
@@ -165,17 +150,48 @@ defmodule ExGram.Router.Dsl do
           description: "filter alias #{inspect(unquote(alias_atom))} is already defined in this module"
       end
 
-      Module.put_attribute(
-        __MODULE__,
-        :__exgram_filter_aliases__,
-        [{unquote(alias_atom), unquote(module)} | current_aliases]
-      )
+      ExGram.Router.Dsl.__put_aliases(__MODULE__, [{unquote(alias_atom), unquote(module)} | current_aliases])
     end
   end
 
   # ---------------------------------------------------------------------------
   # Internal helpers (public so they can be called from macro-generated code)
   # ---------------------------------------------------------------------------
+
+  def __get_aliases(module) do
+    Module.get_attribute(module, @aliases_attribute)
+  end
+
+  def __put_aliases(module, aliases) do
+    Module.put_attribute(module, @aliases_attribute, aliases)
+  end
+
+  @doc false
+  def __get_stack(module) do
+    Module.get_attribute(module, @stack_attribute)
+  end
+
+  def __put_stack(module, stack) do
+    Module.put_attribute(module, @stack_attribute, stack)
+  end
+
+  @doc false
+  def __get_current_stack!(module, method, opts \\ []) do
+    stack = __get_stack(module)
+
+    if stack == [] do
+      description = opts[:description] || "#{method} must be called inside a scope block"
+
+      raise CompileError,
+        file: __ENV__.file,
+        line: __ENV__.line,
+        description: description
+    end
+
+    [current | rest] = stack
+
+    {current, rest}
+  end
 
   @doc false
   def __resolve_filter_module__!(module, alias_or_module, env) when is_atom(alias_or_module) do
@@ -189,7 +205,7 @@ defmodule ExGram.Router.Dsl do
       alias_or_module
     else
       # It's an alias atom like :command — look it up
-      aliases = Module.get_attribute(module, :__exgram_filter_aliases__)
+      aliases = __get_aliases(module)
 
       case Keyword.fetch(aliases, alias_or_module) do
         {:ok, resolved_module} ->

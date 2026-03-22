@@ -3,7 +3,7 @@ defmodule ExGram.Router.Filters.PhotoTest do
 
   alias ExGram.Router.Filters.Photo
 
-  defp msg(overrides \\ []), do: struct(%ExGram.Model.Message{message_id: 1, date: 0}, overrides)
+  defp msg(overrides \\ []), do: struct(%ExGram.Model.Message{date: 0, message_id: 1}, overrides)
   defp ctx, do: %ExGram.Cnt{}
 
   describe "call/3" do
@@ -11,8 +11,8 @@ defmodule ExGram.Router.Filters.PhotoTest do
       photo_size = %ExGram.Model.PhotoSize{
         file_id: "abc",
         file_unique_id: "u",
-        width: 1,
-        height: 1
+        height: 1,
+        width: 1
       }
 
       assert Photo.call({:message, msg(photo: [photo_size])}, ctx(), nil) == true

@@ -3,20 +3,20 @@ defmodule ExGram.Router.Filters.PollTest do
 
   alias ExGram.Router.Filters.Poll
 
-  defp msg(overrides \\ []), do: struct(%ExGram.Model.Message{message_id: 1, date: 0}, overrides)
+  defp msg(overrides \\ []), do: struct(%ExGram.Model.Message{date: 0, message_id: 1}, overrides)
   defp ctx, do: %ExGram.Cnt{}
 
   describe "call/3" do
     test "returns true when message has a poll" do
       poll = %ExGram.Model.Poll{
+        allows_multiple_answers: false,
         id: "poll1",
-        question: "Best language?",
-        options: [],
-        total_voter_count: 0,
-        is_closed: false,
         is_anonymous: true,
-        type: "regular",
-        allows_multiple_answers: false
+        is_closed: false,
+        options: [],
+        question: "Best language?",
+        total_voter_count: 0,
+        type: "regular"
       }
 
       assert Poll.call({:message, msg(poll: poll)}, ctx(), nil) == true
