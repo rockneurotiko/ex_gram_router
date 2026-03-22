@@ -37,4 +37,23 @@ defmodule ExGram.Router.Filter do
   or `false` if the filter fails (skip this scope/handler).
   """
   @callback call(update_info(), context(), opts()) :: boolean()
+
+  def text_filter(text, %Regex{} = regex) when is_binary(text) do
+    String.match?(text, regex)
+  end
+
+  def text_filter(text, match) when is_binary(text) and is_binary(match) do
+    text == match
+  end
+
+  def text_filter(text, opts) when is_binary(text) and is_list(opts) do
+    cond do
+      prefix = opts[:prefix] -> String.starts_with?(text, prefix)
+      suffix = opts[:suffix] -> String.ends_with?(text, suffix)
+      contains = opts[:contains] -> String.contains?(text, contains)
+      true -> false
+    end
+  end
+
+  def text_filter(_text, _match), do: false
 end

@@ -11,10 +11,26 @@ defmodule ExGram.Router.Filters.TextTest do
       assert Text.call({:text, "", %{}}, @ctx, nil) == true
     end
 
-    test "matches text containing a substring" do
-      assert Text.call({:text, "hello world", %{}}, @ctx, "hello") == true
-      assert Text.call({:text, "hello world", %{}}, @ctx, "world") == true
+    test "matches text exactly" do
+      assert Text.call({:text, "hello", %{}}, @ctx, "hello") == true
+      refute Text.call({:text, "hello world", %{}}, @ctx, "hello")
       refute Text.call({:text, "hello world", %{}}, @ctx, "xyz")
+    end
+
+    test "matches text with prefix keyword" do
+      assert Text.call({:text, "!start", %{}}, @ctx, prefix: "!") == true
+      refute Text.call({:text, "hello", %{}}, @ctx, prefix: "!")
+    end
+
+    test "matches text with suffix keyword" do
+      assert Text.call({:text, "hello?", %{}}, @ctx, suffix: "?") == true
+      refute Text.call({:text, "hello", %{}}, @ctx, suffix: "?")
+    end
+
+    test "matches text with contains keyword" do
+      assert Text.call({:text, "hello world", %{}}, @ctx, contains: "hello") == true
+      assert Text.call({:text, "hello world", %{}}, @ctx, contains: "world") == true
+      refute Text.call({:text, "hello world", %{}}, @ctx, contains: "xyz")
     end
 
     test "matches text against a regex" do

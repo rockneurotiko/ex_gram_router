@@ -171,10 +171,13 @@ filter :callback_query
 
 # Built-in alias with opts
 filter :command, :start            # specific command
-filter :text, "keyword"            # text containing substring
+filter :text, "keyword"            # exact text match
 filter :text, ~r/^\d+$/            # text matching regex
+filter :text, contains: "hello"    # text containing substring
+filter :text, prefix: "!"          # text starting with prefix
 filter :callback_query, "action_a" # exact callback data
 filter :callback_query, ~r/^page_/ # callback data matching regex
+filter :callback_query, prefix: "settings:"  # callback data with prefix (useful for parent scopes)
 
 # Module directly (no alias needed)
 filter MyApp.Filters.AdminOnly
@@ -225,15 +228,15 @@ filter :admin
 The following filter aliases are available in every bot using `ExGram.Router`
 without any `alias_filter` declaration:
 
-| Alias             | Matches                  | Options                                                   |
-|-------------------|--------------------------|-----------------------------------------------------------|
-| `:command`        | `{:command, name, msg}`  | `nil` (any), atom/string (specific command name)          |
-| `:text`           | `{:text, text, msg}`     | `nil` (any), string (substring), `%Regex{}` (regex)      |
-| `:callback_query` | `{:callback_query, cq}`  | `nil` (any), string (exact data), `%Regex{}` (regex)     |
-| `:inline_query`   | `{:inline_query, iq}`    | `nil` (any), string (exact query), `%Regex{}` (regex)    |
-| `:regex`          | `{:regex, name, msg}`    | `nil` (any), atom (specific named regex)                  |
-| `:message`        | `{:message, msg}`        | `nil` only (matches any message-type update)              |
-| `:location`       | `{:location, loc}`       | `nil` only (matches any location update)                  |
+| Alias             | Matches                  | Options                                                                                         |
+|-------------------|--------------------------|-------------------------------------------------------------------------------------------------|
+| `:command`        | `{:command, name, msg}`  | `nil` (any), atom/string (specific command name)                                                |
+| `:text`           | `{:text, text, msg}`     | `nil` (any), string (exact match), `%Regex{}` (regex), `prefix:`, `suffix:`, `contains:`       |
+| `:callback_query` | `{:callback_query, cq}`  | `nil` (any), string (exact data), `%Regex{}` (regex), `prefix:`, `suffix:`, `contains:`        |
+| `:inline_query`   | `{:inline_query, iq}`    | `nil` (any), string (exact query), `%Regex{}` (regex), `prefix:`, `suffix:`, `contains:`       |
+| `:regex`          | `{:regex, name, msg}`    | `nil` (any), atom (specific named regex)                                                        |
+| `:message`        | `{:message, msg}`        | `nil` only (matches any message-type update)                                                    |
+| `:location`       | `{:location, loc}`       | `nil` only (matches any location update)                                                        |
 
 ### Examples
 
@@ -248,11 +251,16 @@ filter :command, :help
 # Any text message
 filter :text
 
-# Text containing a word
+# Exact text match
 filter :text, "hello"
 
 # Text matching a pattern
 filter :text, ~r/\A\d{4}\z/
+
+# Text keyword matchers
+filter :text, prefix: "!"
+filter :text, suffix: "?"
+filter :text, contains: "hello"
 
 # Any callback query
 filter :callback_query
@@ -261,11 +269,19 @@ filter :callback_query
 filter :callback_query, "confirm"
 filter :callback_query, "cancel"
 
-# Callback query matching a prefix
+# Callback query matching a regex
 filter :callback_query, ~r/^page_\d+$/
+
+# Callback query keyword matchers — useful for hierarchical callback data
+filter :callback_query, prefix: "settings:"
+filter :callback_query, suffix: ":confirm"
+filter :callback_query, contains: "item"
 
 # Any inline query
 filter :inline_query
+
+# Inline query keyword matchers
+filter :inline_query, prefix: "@"
 
 # Any location update
 filter :location

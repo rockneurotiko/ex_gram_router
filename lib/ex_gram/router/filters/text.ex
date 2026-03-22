@@ -8,17 +8,25 @@ defmodule ExGram.Router.Filters.Text do
       filter ExGram.Router.Filters.Text
       filter :text
 
-      # Match text containing a specific substring
+      # Match text exactly
       filter :text, "hello"
 
       # Match text against a regex
       filter :text, ~r/^\\d+$/
 
+      # Keyword list matchers
+      filter :text, prefix: "!"
+      filter :text, suffix: "?"
+      filter :text, contains: "hello"
+
   ## Options
 
   - `nil` — matches any text update
-  - `string` — matches if the text contains the string (case-sensitive)
+  - `string` — matches if the text equals the string exactly
   - `%Regex{}` — matches if the text matches the regex
+  - `prefix: string` — matches if the text starts with the given prefix
+  - `suffix: string` — matches if the text ends with the given suffix
+  - `contains: string` — matches if the text contains the given substring
   """
 
   @behaviour ExGram.Router.Filter
@@ -26,12 +34,8 @@ defmodule ExGram.Router.Filters.Text do
   @impl ExGram.Router.Filter
   def call({:text, _text, _msg}, _context, nil), do: true
 
-  def call({:text, text, _msg}, _context, %Regex{} = regex) do
-    String.match?(text, regex)
-  end
-
-  def call({:text, text, _msg}, _context, substring) when is_binary(substring) do
-    String.contains?(text, substring)
+  def call({:text, text, _msg}, _context, match) do
+    ExGram.Router.Filter.text_filter(text, match)
   end
 
   def call(_update_info, _context, _opts), do: false
