@@ -64,15 +64,38 @@ defmodule ExGram.Router do
 
   The following aliases are available without `alias_filter`:
 
-  | Alias            | Module                                    | Example usage                         |
-  |------------------|-------------------------------------------|---------------------------------------|
-  | `:command`       | `ExGram.Router.Filters.Command`           | `filter :command, :start`             |
-  | `:text`          | `ExGram.Router.Filters.Text`              | `filter :text`                        |
-  | `:callback_query`| `ExGram.Router.Filters.CallbackQuery`     | `filter :callback_query, "action_a"`  |
-  | `:regex`         | `ExGram.Router.Filters.Regex`             | `filter :regex, :email`               |
-  | `:message`       | `ExGram.Router.Filters.Message`           | `filter :message`                     |
-  | `:inline_query`  | `ExGram.Router.Filters.InlineQuery`       | `filter :inline_query`                |
-  | `:location`      | `ExGram.Router.Filters.Location`          | `filter :location`                    |
+  | Alias              | Module                                    | Example usage                         |
+  |--------------------|-------------------------------------------|---------------------------------------|
+  | `:command`         | `ExGram.Router.Filters.Command`           | `filter :command, :start`             |
+  | `:text`            | `ExGram.Router.Filters.Text`              | `filter :text`                        |
+  | `:callback_query`  | `ExGram.Router.Filters.CallbackQuery`     | `filter :callback_query, "action_a"`  |
+  | `:regex`           | `ExGram.Router.Filters.Regex`             | `filter :regex, :email`               |
+  | `:message`         | `ExGram.Router.Filters.Message`           | `filter :message`                     |
+  | `:inline_query`    | `ExGram.Router.Filters.InlineQuery`       | `filter :inline_query`                |
+  | `:location`        | `ExGram.Router.Filters.Location`          | `filter :location`                    |
+  | `:animation`       | `ExGram.Router.Filters.Animation`         | `filter :animation`                   |
+  | `:audio`           | `ExGram.Router.Filters.Audio`             | `filter :audio`                       |
+  | `:contact`         | `ExGram.Router.Filters.Contact`           | `filter :contact`                     |
+  | `:document`        | `ExGram.Router.Filters.Document`          | `filter :document`                    |
+  | `:photo`           | `ExGram.Router.Filters.Photo`             | `filter :photo`                       |
+  | `:poll`            | `ExGram.Router.Filters.Poll`              | `filter :poll`                        |
+  | `:sticker`         | `ExGram.Router.Filters.Sticker`           | `filter :sticker`                     |
+  | `:video`           | `ExGram.Router.Filters.Video`             | `filter :video`                       |
+  | `:video_note`      | `ExGram.Router.Filters.VideoNote`         | `filter :video_note`                  |
+  | `:voice`           | `ExGram.Router.Filters.Voice`             | `filter :voice`                       |
+
+  ## `use ExGram.Router` options
+
+  - **`aliases: [atom: Module, ...]`** - Additional filter aliases to merge with the builtins.
+    Each key must not conflict with an existing builtin alias.
+  - **`exclude_aliases: [:atom, ...]`** - Builtin (or user-provided) aliases to remove from the
+    final alias set. Useful when you want to prevent a builtin from being referenced.
+
+  Example:
+
+      use ExGram.Router,
+        aliases: [state: MyApp.Filters.State],
+        exclude_aliases: [:poll, :video_note]
 
   ## Custom filters
 
@@ -108,12 +131,33 @@ defmodule ExGram.Router do
     regex: ExGram.Router.Filters.Regex,
     message: ExGram.Router.Filters.Message,
     inline_query: ExGram.Router.Filters.InlineQuery,
-    location: ExGram.Router.Filters.Location
+    location: ExGram.Router.Filters.Location,
+    animation: ExGram.Router.Filters.Animation,
+    audio: ExGram.Router.Filters.Audio,
+    contact: ExGram.Router.Filters.Contact,
+    document: ExGram.Router.Filters.Document,
+    photo: ExGram.Router.Filters.Photo,
+    poll: ExGram.Router.Filters.Poll,
+    sticker: ExGram.Router.Filters.Sticker,
+    video: ExGram.Router.Filters.Video,
+    video_note: ExGram.Router.Filters.VideoNote,
+    voice: ExGram.Router.Filters.Voice
   ]
 
   @doc false
-  defmacro __using__(_opts) do
-    builtin_aliases = @builtin_aliases
+  defmacro __using__(opts) do
+    user_aliases = Keyword.get(opts, :aliases, [])
+    exclude = Keyword.get(opts, :exclude_aliases, [])
+
+    for {alias_key, _mod} <- user_aliases do
+      if Keyword.has_key?(@builtin_aliases, alias_key) do
+        raise CompileError,
+          description: "alias :#{alias_key} conflicts with a builtin alias in ExGram.Router"
+      end
+    end
+
+    merged = @builtin_aliases ++ user_aliases
+    final_aliases = Keyword.drop(merged, exclude)
 
     quote do
       import ExGram.Router.Dsl, only: [scope: 1, filter: 1, filter: 2, handle: 1, alias_filter: 2]
@@ -128,8 +172,8 @@ defmodule ExGram.Router do
       # User-registered filter aliases (accumulated list of {atom, module})
       Module.register_attribute(__MODULE__, :__exgram_filter_aliases__, accumulate: false)
 
-      # Seed with built-in aliases so they are always available
-      Module.put_attribute(__MODULE__, :__exgram_filter_aliases__, unquote(builtin_aliases))
+      # Seed with builtin aliases merged with user-provided aliases, minus any exclusions
+      Module.put_attribute(__MODULE__, :__exgram_filter_aliases__, unquote(final_aliases))
 
       @before_compile ExGram.Router.Compiler
     end

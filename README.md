@@ -10,7 +10,7 @@ A declarative routing DSL for [ExGram](https://github.com/rockneurotiko/ex_gram)
 `ExGram.Router` replaces hand-written `handle/2` pattern-match clauses with a
 composable `scope`/`filter`/`handle` DSL where **everything is a filter** —
 built-in filters cover the common update types (commands, text, callback
-queries, inline queries, locations) and you can write custom filters to encode
+queries, inline queries, locations, media messages, and more) and you can write custom filters to encode
 any runtime predicate: conversation state, user roles, feature flags, and more.
 
 ---
@@ -25,6 +25,7 @@ any runtime predicate: conversation state, user roles, feature flags, and more.
   - [handle](#handle)
   - [alias_filter](#alias_filter)
 - [Built-in Filters](#built-in-filters)
+- [use ExGram.Router Options](#use-exgramrouter-options)
 - [Enrich Filters](#enrich-filters)
 - [Handler Arities](#handler-arities)
 - [Mix Tasks](#mix-tasks)
@@ -43,18 +44,9 @@ Add `ex_gram_router` to your dependencies:
 def deps do
   [
     {:ex_gram, "~> 0.60"},
-    {:ex_gram_router, "~> 0.1.0"},
-    {:jason, ">= 1.0.0"},
-    {:req, "~> 0.5"}
+    {:ex_gram_router, "~> 0.1.0"}
   ]
 end
-```
-
-Configure ExGram in `config/config.exs`:
-
-```elixir
-config :ex_gram, adapter: ExGram.Adapter.Req
-config :ex_gram, token: System.fetch_env!("BOT_TOKEN")
 ```
 
 ---
@@ -99,25 +91,6 @@ defmodule MyApp.Handlers do
   def help(context),  do: answer(context, "Here is what I can do...")
   def echo(context),  do: answer(context, "You said something!")
   def fallback(context), do: context
-end
-```
-
-Start ExGram and your bot in your supervision tree:
-
-```elixir
-defmodule MyApp.Application do
-  use Application
-
-  def start(_type, _args) do
-    token = Application.fetch_env!(:ex_gram, :token)
-
-    children = [
-      ExGram,
-      {MyApp.Bot, [method: :polling, token: token]}
-    ]
-
-    Supervisor.start_link(children, strategy: :one_for_one, name: MyApp.Supervisor)
-  end
 end
 ```
 
@@ -238,6 +211,16 @@ without any `alias_filter` declaration:
 | `:regex`          | `{:regex, name, msg}`    | `nil` (any), atom (specific named regex)                                                        |
 | `:message`        | `{:message, msg}`        | `nil` only (matches any message-type update)                                                    |
 | `:location`       | `{:location, loc}`       | `nil` only (matches any location update)                                                        |
+| `:animation`      | `{:animation, anim}`     | `nil` only                                                                                      |
+| `:audio`          | `{:audio, audio}`        | `nil` only                                                                                      |
+| `:contact`        | `{:contact, contact}`    | `nil` only                                                                                      |
+| `:document`       | `{:document, doc}`       | `nil` only                                                                                      |
+| `:photo`          | `{:photo, photos}`       | `nil` only                                                                                      |
+| `:poll`           | `{:poll, poll}`          | `nil` only                                                                                      |
+| `:sticker`        | `{:sticker, sticker}`    | `nil` only                                                                                      |
+| `:video`          | `{:video, video}`        | `nil` only                                                                                      |
+| `:video_note`     | `{:video_note, vnote}`   | `nil` only                                                                                      |
+| `:voice`          | `{:voice, voice}`        | `nil` only                                                                                      |
 
 ### Examples
 
@@ -293,6 +276,55 @@ filter :location
 
 # Any message-type update (photos, documents, stickers, etc.)
 filter :message
+
+# Media message types
+filter :animation
+filter :audio
+filter :contact
+filter :document
+filter :photo
+filter :poll
+filter :sticker
+filter :video
+filter :video_note
+filter :voice
+```
+
+---
+
+## `use ExGram.Router` Options
+
+`use ExGram.Router` accepts two optional keyword arguments to customise the alias set available in the module.
+
+### `aliases`
+
+Adds extra filter aliases on top of the builtins. Each key must not conflict with an existing builtin alias name.
+
+```elixir
+use ExGram.Router,
+  aliases: [
+    state: MyApp.Filters.State,
+    role: MyApp.Filters.Role
+  ]
+```
+
+After this, `filter :state, :registration` and `filter :role, :admin` work without a separate `alias_filter` call.
+
+### `exclude_aliases`
+
+Removes aliases from the merged set (builtins plus any user-provided `aliases`). Useful when you want to prevent a builtin from being referenced accidentally, or to keep the alias list minimal.
+
+```elixir
+use ExGram.Router,
+  exclude_aliases: [:poll, :video_note, :animation]
+```
+
+### Combined example
+
+```elixir
+use ExGram.Router,
+  aliases: [state: MyApp.Filters.State],
+  exclude_aliases: [:poll, :video_note]
 ```
 
 ---
