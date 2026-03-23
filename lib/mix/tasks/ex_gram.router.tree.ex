@@ -114,8 +114,8 @@ defmodule Mix.Tasks.ExGram.Router.Tree do
 
     handler_line =
       case scope.handler do
-        {mod, fun, arity} -> ["handle: &#{inspect(mod)}.#{fun}/#{arity}"]
         nil -> []
+        handler -> ["handle: #{Mix.Tasks.ExGram.Router.FormatHelpers.format_handler(handler)}"]
       end
 
     filter_lines ++ handler_line
@@ -124,23 +124,8 @@ defmodule Mix.Tasks.ExGram.Router.Tree do
   defp build_filter_lines(%ExGram.Router.Scope{filters: []}), do: []
 
   defp build_filter_lines(%ExGram.Router.Scope{filters: filters}) do
-    ["filters: [#{Enum.map_join(filters, ", ", &format_filter/1)}]"]
-  end
-
-  defp format_filter({module, opts}) do
-    if function_exported?(module, :format_filter, 1) do
-      module.format_filter(opts)
-    else
-      default_format_filter(module, opts)
-    end
-  end
-
-  defp default_format_filter(module, nil), do: short_name(module)
-  defp default_format_filter(module, opts), do: "#{short_name(module)}(#{inspect(opts)})"
-
-  defp short_name(module) do
-    module
-    |> Module.split()
-    |> List.last()
+    [
+      "filters: [#{Enum.map_join(filters, ", ", &Mix.Tasks.ExGram.Router.FormatHelpers.format_filter/1)}]"
+    ]
   end
 end

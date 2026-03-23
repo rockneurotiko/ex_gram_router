@@ -27,7 +27,7 @@ any runtime predicate: conversation state, user roles, feature flags, and more.
 - [Built-in Filters](#built-in-filters)
 - [Enrich Filters](#enrich-filters)
 - [Handler Arities](#handler-arities)
-- [Mix Task](#mix-task)
+- [Mix Tasks](#mix-tasks)
 - [Custom Filters](#custom-filters)
 - [Nested Scopes and State Machines](#nested-scopes-and-state-machines)
 - [Testing](#testing)
@@ -379,7 +379,7 @@ scope do
 end
 ```
 
-The `mix ex_gram.router.tree` task marks propagating filters with a `[propagate]` indicator.
+The `mix ex_gram.router.tree` task marks propagating filters with a `[propagate]` indicator; `mix ex_gram.router.flat` includes them in each leaf's full filter chain.
 
 ---
 
@@ -414,11 +414,16 @@ end
 
 ---
 
-## Mix Task
+## Mix Tasks
 
-`ExGram.Router` ships with a Mix task that prints the routing tree of any bot
-module in a human-readable format. Useful for debugging, code review, and
-understanding how updates will be dispatched at a glance.
+`ExGram.Router` ships with two Mix tasks for inspecting any bot module's routing
+configuration. Both tasks compile the project first and call
+`__exgram_routing_tree__/0`, which is generated at compile time.
+
+### `mix ex_gram.router.tree`
+
+Prints the routing tree in an indented, hierarchical format. Useful for
+understanding the full scope structure and nesting at a glance.
 
 ```
 mix ex_gram.router.tree MyApp.Bot
@@ -435,17 +440,36 @@ MyApp.Bot routing tree:
 │   ├── filters: [Command(:help)]
 │   └── handle: &MyApp.Handlers.help/1
 └── scope
-    ├── filters: [Flow(:registration)]
+    ├── filters: [CallbackQuery([prefix: "proj:"]) [propagate]]
     ├── scope
-    │   ├── filters: [State(:get_name), Text]
-    │   └── handle: &MyApp.Handlers.got_name/1
+    │   ├── filters: [CallbackQuery("change")]
+    │   └── handle: &MyApp.Handlers.change_project/1
     └── scope
-        ├── filters: [State(:get_email), Text]
-        └── handle: &MyApp.Handlers.got_email/1
+        ├── filters: [CallbackQuery("delete")]
+        └── handle: &MyApp.Handlers.delete_project/1
 ```
 
-The module must `use ExGram.Router` — the task calls `__exgram_routing_tree__/0`
-which is generated at compile time.
+### `mix ex_gram.router.flat`
+
+Prints a flat, one-line-per-handler listing. Every entry is a leaf with its
+full accumulated filter chain - parent scope filters are prepended so you can
+see the complete set of conditions that must pass for each handler to run.
+Similar to `phx.routes` in Phoenix.
+
+```
+mix ex_gram.router.flat MyApp.Bot
+```
+
+Example output:
+
+```
+MyApp.Bot handlers:
+MyApp.Handlers  start/1          filters: [Command(:start)]
+MyApp.Handlers  help/1           filters: [Command(:help)]
+MyApp.Handlers  change_project/1 filters: [CallbackQuery([prefix: "proj:"]) [propagate], CallbackQuery("change")]
+MyApp.Handlers  delete_project/1 filters: [CallbackQuery([prefix: "proj:"]) [propagate], CallbackQuery("delete")]
+MyApp.Handlers  fallback/1       filters: []
+```
 
 ---
 
