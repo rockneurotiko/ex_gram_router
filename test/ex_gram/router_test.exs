@@ -517,4 +517,72 @@ defmodule ExGram.RouterTest do
       end
     end
   end
+
+  describe "local function capture handlers" do
+    defmodule LocalCaptureBot do
+      use ExGram.Bot, name: :test_local_capture_bot
+      use ExGram.Router
+
+      command("ping", description: "Ping")
+
+      scope do
+        filter(:command, :ping)
+        handle(&public_handler/1)
+      end
+
+      scope do
+        filter(:command, :echo)
+        handle(&private_handler/2)
+      end
+
+      scope do
+        handle(&fallback/1)
+      end
+
+      def public_handler(context), do: Map.put(context, :result, :public)
+      defp private_handler({:command, name, _}, context), do: Map.put(context, :result, {:private, name})
+      defp fallback(context), do: Map.put(context, :result, :fallback)
+    end
+
+    test "public local capture (arity 1) dispatches correctly" do
+      tree = LocalCaptureBot.__exgram_routing_tree__()
+      [ping_scope | _] = tree
+      context = %{extra: %{}}
+      result = ExGram.Router.Dispatcher.dispatch({:command, :ping, ""}, context, [ping_scope])
+      assert result.result == :public
+    end
+
+    test "private local capture (arity 2) dispatches correctly" do
+      tree = LocalCaptureBot.__exgram_routing_tree__()
+      filtered = Enum.filter(tree, fn s -> s.filters != [] end)
+      echo_scope = Enum.at(filtered, 1)
+      context = %{extra: %{}}
+      result = ExGram.Router.Dispatcher.dispatch({:command, :echo, ""}, context, [echo_scope])
+      assert result.result == {:private, :echo}
+    end
+
+    test "local capture fallback catches unmatched updates" do
+      tree = LocalCaptureBot.__exgram_routing_tree__()
+      context = %{extra: %{}}
+      result = ExGram.Router.Dispatcher.dispatch({:text, "hello", %{}}, context, tree)
+      assert result.result == :fallback
+    end
+
+    test "local capture with invalid arity raises CompileError" do
+      assert_raise CompileError, ~r/arity 3/, fn ->
+        Code.compile_string("""
+        defmodule BadLocalArity do
+          use ExGram.Bot, name: :bad_local_arity
+          use ExGram.Router
+
+          scope do
+            handle(&my_fun/3)
+          end
+
+          def my_fun(a, b, c), do: c
+        end
+        """)
+      end
+    end
+  end
 end

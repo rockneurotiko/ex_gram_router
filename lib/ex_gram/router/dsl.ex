@@ -98,14 +98,17 @@ defmodule ExGram.Router.Dsl do
   Sets the handler for the current scope.
 
   Accepts a function capture of arity 1 or 2, or an anonymous function:
-  - Arity 1: `&MyMod.fun/1` or `fn context -> ... end` — receives only the context
-  - Arity 2: `&MyMod.fun/2` or `fn update_info, context -> ... end` — receives
+  - Arity 1: `&MyMod.fun/1`, `&my_local_fun/1`, or `fn context -> ... end` - receives only the context
+  - Arity 2: `&MyMod.fun/2`, `&my_local_fun/2`, or `fn update_info, context -> ... end` - receives
     `(update_info, context)`, same as ExGram's `handle/2`
+
+  Local captures (`&my_fun/1`) support both public (`def`) and private (`defp`) functions.
 
   ## Examples
 
       handle &MyBot.start/1
       handle &MyBot.handle_text/2
+      handle &my_local_handler/1
 
       handle fn context ->
         context |> answer("Hello!")
@@ -258,6 +261,19 @@ defmodule ExGram.Router.Dsl do
 
         {mod, fun, arity}
 
+      # &my_local_fun/N  (local function capture, no module prefix)
+      # Treated like an anonymous fn - compiled as a function value so that
+      # private functions (defp) are also supported.
+      {:&, _, [{:/, _, [{fun_name, _, _}, arity]}]} when is_atom(fun_name) and is_integer(arity) ->
+        if arity not in [1, 2] do
+          raise CompileError,
+            file: env.file,
+            line: env.line,
+            description: "handle/1 expects a function capture of arity 1 or 2, got arity #{arity}"
+        end
+
+        {:fn, func}
+
       # fn args -> body end  (anonymous function, one or more clauses)
       {:fn, _, [{:->, _, [first_args, _body]} | _rest_clauses]} ->
         arity = length(first_args)
@@ -276,7 +292,7 @@ defmodule ExGram.Router.Dsl do
           file: env.file,
           line: env.line,
           description:
-            "handle/1 expects a function capture like &MyMod.fun/1 or &MyMod.fun/2, " <>
+            "handle/1 expects a function capture like &MyMod.fun/1, &my_local_fun/1, or &MyMod.fun/2, " <>
               "or an anonymous function like fn context -> ... end, " <>
               "got: #{Macro.to_string(func)}"
     end
