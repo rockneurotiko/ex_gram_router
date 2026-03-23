@@ -21,6 +21,17 @@ defmodule Mix.Tasks.ExGram.Router.TreeTest do
     def call(_update_info, _context, _opts), do: true
   end
 
+  defmodule TreeTestCustomFormatFilter do
+    @behaviour ExGram.Router.Filter
+
+    @impl ExGram.Router.Filter
+    def call(_update_info, _context, _opts), do: true
+
+    @impl ExGram.Router.Filter
+    def format_filter(nil), do: "CustomFilter"
+    def format_filter(opts), do: "CustomFilter<#{inspect(opts)}>"
+  end
+
   defmodule TreeTestBot do
     use ExGram.Bot, name: :tree_test_bot
     use ExGram.Router
@@ -48,6 +59,30 @@ defmodule Mix.Tasks.ExGram.Router.TreeTest do
 
     scope do
       handle(&Mix.Tasks.ExGram.Router.TreeTest.TreeTestHandlers.fallback/1)
+    end
+  end
+
+  defmodule TreeTestCustomBot do
+    use ExGram.Bot, name: :tree_test_custom_bot
+    use ExGram.Router
+
+    alias_filter(
+      Mix.Tasks.ExGram.Router.TreeTest.TreeTestCustomFormatFilter,
+      as: :custom_format_filter
+    )
+
+    scope do
+      filter(:custom_format_filter, :some_opts)
+      handle(&Mix.Tasks.ExGram.Router.TreeTest.TreeTestHandlers.start/1)
+    end
+
+    scope do
+      filter(:callback_query, prefix: "proj:", propagate: true)
+
+      scope do
+        filter(:callback_query, "change")
+        handle(&Mix.Tasks.ExGram.Router.TreeTest.TreeTestHandlers.help/1)
+      end
     end
   end
 
@@ -138,6 +173,29 @@ defmodule Mix.Tasks.ExGram.Router.TreeTest do
           Mix.Tasks.ExGram.Router.Tree.run(["String"])
         end)
       end
+    end
+  end
+
+  describe "format_filter/1 callback" do
+    test "uses module's format_filter/1 when implemented" do
+      output = run_task("Mix.Tasks.ExGram.Router.TreeTest.TreeTestCustomBot")
+      assert output =~ "CustomFilter<:some_opts>"
+    end
+
+    test "falls back to generic format for filters without format_filter/1" do
+      output = run_task("Mix.Tasks.ExGram.Router.TreeTest.TreeTestBot")
+      assert output =~ "Command(:start)"
+      assert output =~ "TreeTestFilter(:some_state)"
+    end
+
+    test "CallbackQuery with propagate shows [propagate] suffix" do
+      output = run_task("Mix.Tasks.ExGram.Router.TreeTest.TreeTestCustomBot")
+      assert output =~ "CallbackQuery([prefix: \"proj:\"]) [propagate]"
+    end
+
+    test "CallbackQuery without propagate shows normal format" do
+      output = run_task("Mix.Tasks.ExGram.Router.TreeTest.TreeTestCustomBot")
+      assert output =~ ~s|CallbackQuery("change")|
     end
   end
 end

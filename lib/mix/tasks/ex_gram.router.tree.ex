@@ -127,23 +127,16 @@ defmodule Mix.Tasks.ExGram.Router.Tree do
     ["filters: [#{Enum.map_join(filters, ", ", &format_filter/1)}]"]
   end
 
-  defp format_filter({module, nil}) do
-    short_name(module)
-  end
-
-  defp format_filter({module, opts}) when is_list(opts) do
-    if Keyword.get(opts, :propagate, false) do
-      clean_opts = Keyword.delete(opts, :propagate)
-      base = if clean_opts == [], do: short_name(module), else: "#{short_name(module)}(#{inspect(clean_opts)})"
-      base <> " [propagate]"
+  defp format_filter({module, opts}) do
+    if function_exported?(module, :format_filter, 1) do
+      module.format_filter(opts)
     else
-      "#{short_name(module)}(#{inspect(opts)})"
+      default_format_filter(module, opts)
     end
   end
 
-  defp format_filter({module, opts}) do
-    "#{short_name(module)}(#{inspect(opts)})"
-  end
+  defp default_format_filter(module, nil), do: short_name(module)
+  defp default_format_filter(module, opts), do: "#{short_name(module)}(#{inspect(opts)})"
 
   defp short_name(module) do
     module

@@ -86,7 +86,28 @@ defmodule ExGram.Router.Filter do
   """
   @callback scope_extra(context(), opts()) :: map()
 
-  @optional_callbacks [scope_extra: 2]
+  @doc """
+  Formats this filter as a human-readable string for display in the routing tree.
+
+  Called by `mix ex_gram.router.tree` when rendering a scope's filter list.
+  The returned string is used directly in the tree output - it should include
+  the filter name and any relevant opts representation.
+
+  This callback is optional. Filters that do not implement it fall back to
+  the default generic formatting provided by the mix task.
+
+  ## Example
+
+      # For `filter :command, :start` the default output is:
+      #   Command(:start)
+
+      # A filter that formats itself:
+      def format_filter(nil), do: "MyFilter"
+      def format_filter(opts), do: "MyFilter(\#{inspect(opts)})"
+  """
+  @callback format_filter(opts()) :: String.t()
+
+  @optional_callbacks [scope_extra: 2, format_filter: 1]
 
   # ---------------------------------------------------------------------------
   # Shared text-matching helper (used by text and callback_query filters)

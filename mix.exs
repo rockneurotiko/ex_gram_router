@@ -73,9 +73,7 @@ defmodule ExGramRouter.MixProject do
 
   defp deps do
     [
-      {:ex_gram, "~> 0.60"},
-      {:jason, ">= 1.0.0", optional: true},
-      {:req, "~> 0.5", optional: true},
+      {:ex_gram, "~> 0.64"},
       # Development
       {:credo, "~> 1.7", only: [:dev, :test], runtime: false},
       {:dialyxir, "~> 1.4", only: [:dev, :test], runtime: false},

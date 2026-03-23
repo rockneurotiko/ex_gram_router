@@ -83,4 +83,24 @@ defmodule ExGram.Router.Filters.CallbackQuery do
   end
 
   def scope_extra(_context, _opts), do: %{}
+
+  @impl ExGram.Router.Filter
+  def format_filter(nil), do: "CallbackQuery"
+
+  def format_filter(opts) when is_list(opts) do
+    if Keyword.get(opts, :propagate, false) do
+      clean_opts = Keyword.delete(opts, :propagate)
+
+      base =
+        if clean_opts == [],
+          do: "CallbackQuery",
+          else: "CallbackQuery(#{inspect(clean_opts)})"
+
+      base <> " [propagate]"
+    else
+      "CallbackQuery(#{inspect(opts)})"
+    end
+  end
+
+  def format_filter(opts), do: "CallbackQuery(#{inspect(opts)})"
 end
