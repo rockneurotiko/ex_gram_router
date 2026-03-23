@@ -64,7 +64,7 @@ defmodule ExGram.Router.Compiler do
     quote do
       @doc false
       def __exgram_routing_tree__ do
-        unquote(Macro.escape(scopes))
+        unquote(Macro.escape(scopes, unquote: true))
       end
 
       @doc false

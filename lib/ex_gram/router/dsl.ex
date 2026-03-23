@@ -97,18 +97,38 @@ defmodule ExGram.Router.Dsl do
   @doc """
   Sets the handler for the current scope.
 
-  Accepts a function capture of arity 1 or 2:
-  - Arity 1: `&MyMod.fun/1` — receives only the context
-  - Arity 2: `&MyMod.fun/2` — receives `(update_info, context)`, same as ExGram's `handle/2`
+  Accepts a function capture of arity 1 or 2, or an anonymous function:
+  - Arity 1: `&MyMod.fun/1` or `fn context -> ... end` — receives only the context
+  - Arity 2: `&MyMod.fun/2` or `fn update_info, context -> ... end` — receives
+    `(update_info, context)`, same as ExGram's `handle/2`
 
   ## Examples
 
       handle &MyBot.start/1
       handle &MyBot.handle_text/2
+
+      handle fn context ->
+        context |> answer("Hello!")
+      end
+
+      handle fn update_info, context ->
+        context
+      end
   """
   defmacro handle(func) do
     # Parse the handler AST at compile time, before emitting any runtime code.
     handler = __parse_handler__!(func, __CALLER__)
+
+    # For anonymous functions the handler is the fn AST itself wrapped in an
+    # {:unquote, [], [...]} marker so that Macro.escape/2 with unquote: true
+    # splices it as compiled code rather than trying to serialize the function.
+    # We escape the marker tuple itself so it is stored as plain data in the
+    # scope struct (module attribute), not evaluated as an unquote expression.
+    handler_ast =
+      case handler do
+        {:fn, fn_ast} -> Macro.escape({:unquote, [], [fn_ast]})
+        mfa -> Macro.escape(mfa)
+      end
 
     quote do
       {current, rest} = ExGram.Router.Dsl.__get_current_stack!(__MODULE__, "handle/1")
@@ -120,7 +140,7 @@ defmodule ExGram.Router.Dsl do
           description: "a scope can only have one handle/1 call"
       end
 
-      updated = %{current | handler: unquote(Macro.escape(handler))}
+      updated = %{current | handler: unquote(handler_ast)}
       ExGram.Router.Dsl.__put_stack(__MODULE__, [updated | rest])
     end
   end
@@ -238,12 +258,26 @@ defmodule ExGram.Router.Dsl do
 
         {mod, fun, arity}
 
+      # fn args -> body end  (anonymous function, one or more clauses)
+      {:fn, _, [{:->, _, [first_args, _body]} | _rest_clauses]} ->
+        arity = length(first_args)
+
+        if arity not in [1, 2] do
+          raise CompileError,
+            file: env.file,
+            line: env.line,
+            description: "handle/1 expects a function of arity 1 or 2, got arity #{arity}"
+        end
+
+        {:fn, func}
+
       _ ->
         raise CompileError,
           file: env.file,
           line: env.line,
           description:
             "handle/1 expects a function capture like &MyMod.fun/1 or &MyMod.fun/2, " <>
+              "or an anonymous function like fn context -> ... end, " <>
               "got: #{Macro.to_string(func)}"
     end
   end

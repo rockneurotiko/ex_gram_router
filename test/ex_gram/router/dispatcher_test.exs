@@ -57,6 +57,28 @@ defmodule ExGram.Router.DispatcherTest do
       assert result.command_name == :start
     end
 
+    test "dispatches to a matching leaf scope (1-arity anonymous function)" do
+      handler = fn context -> Map.put(context, :handled_by, :anon_one) end
+
+      tree = [
+        %Scope{filters: [{AlwaysTrue, nil}], handler: handler}
+      ]
+
+      result = Dispatcher.dispatch({:text, "hello", %{}}, ctx(), tree)
+      assert result.handled_by == :anon_one
+    end
+
+    test "dispatches to a matching leaf scope (2-arity anonymous function)" do
+      handler = fn {:command, name, _}, context -> Map.put(context, :command_name, name) end
+
+      tree = [
+        %Scope{filters: [], handler: handler}
+      ]
+
+      result = Dispatcher.dispatch({:command, :start, ""}, ctx(), tree)
+      assert result.command_name == :start
+    end
+
     test "returns context unchanged when no scope matches" do
       tree = [
         %Scope{filters: [{AlwaysFalse, nil}], handler: {Handlers, :handle_one, 1}}

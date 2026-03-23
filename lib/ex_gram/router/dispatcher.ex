@@ -100,4 +100,12 @@ defmodule ExGram.Router.Dispatcher do
   defp call_handler(update_info, context, {mod, fun, 2}) do
     apply(mod, fun, [update_info, context])
   end
+
+  defp call_handler(_update_info, context, handler) when is_function(handler, 1) do
+    handler.(context)
+  end
+
+  defp call_handler(update_info, context, handler) when is_function(handler, 2) do
+    handler.(update_info, context)
+  end
 end

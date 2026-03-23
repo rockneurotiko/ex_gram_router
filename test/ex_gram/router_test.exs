@@ -414,4 +414,107 @@ defmodule ExGram.RouterTest do
       end)
     end
   end
+
+  describe "anonymous function handlers" do
+    defmodule AnonBot do
+      use ExGram.Bot, name: :test_anon_bot
+      use ExGram.Router
+
+      command("ping", description: "Ping")
+
+      # Arity-1 anonymous fn: only receives context
+      scope do
+        filter(:command, :ping)
+
+        handle(fn context ->
+          Map.put(context, :anon_result, :pong)
+        end)
+      end
+
+      # Arity-2 anonymous fn: receives (update_info, context)
+      scope do
+        filter(:command, :echo)
+
+        handle(fn {:command, name, _}, context ->
+          Map.put(context, :echoed_command, name)
+        end)
+      end
+
+      # Fallback
+      scope do
+        handle(fn context ->
+          Map.put(context, :anon_result, :fallback)
+        end)
+      end
+    end
+
+    setup do
+      bot_name = :test_anon_bot
+      {:ok, bot_name: bot_name}
+    end
+
+    test "routing tree contains anonymous function handlers" do
+      tree = AnonBot.__exgram_routing_tree__()
+      assert is_list(tree)
+
+      handlers = Enum.map(tree, & &1.handler)
+      assert Enum.any?(handlers, &is_function(&1, 1))
+    end
+
+    test "arity-1 anonymous fn handler is dispatched correctly", %{bot_name: _bot_name} do
+      [ping_scope | _] = AnonBot.__exgram_routing_tree__()
+      context = %{extra: %{}}
+      result = ExGram.Router.Dispatcher.dispatch({:command, :ping, ""}, context, [ping_scope])
+      assert result.anon_result == :pong
+    end
+
+    test "arity-2 anonymous fn handler receives (update_info, context)" do
+      tree = AnonBot.__exgram_routing_tree__()
+      # Find the second filtered scope (echo)
+      filtered_scopes = Enum.filter(tree, fn s -> s.filters != [] end)
+      echo_scope = Enum.at(filtered_scopes, 1)
+      context = %{extra: %{}}
+      result = ExGram.Router.Dispatcher.dispatch({:command, :echo, ""}, context, [echo_scope])
+      assert result.echoed_command == :echo
+    end
+
+    test "fallback anonymous fn handler catches unmatched updates" do
+      tree = AnonBot.__exgram_routing_tree__()
+      context = %{extra: %{}}
+      result = ExGram.Router.Dispatcher.dispatch({:text, "hello", %{}}, context, tree)
+      assert result.anon_result == :fallback
+    end
+  end
+
+  describe "anonymous function compile-time validation" do
+    test "anonymous fn with arity 0 raises CompileError" do
+      assert_raise CompileError, ~r/arity 0/, fn ->
+        Code.compile_string("""
+        defmodule BadAnonArity0 do
+          use ExGram.Bot, name: :bad_anon_0
+          use ExGram.Router
+
+          scope do
+            handle(fn -> :ok end)
+          end
+        end
+        """)
+      end
+    end
+
+    test "anonymous fn with arity 3 raises CompileError" do
+      assert_raise CompileError, ~r/arity 3/, fn ->
+        Code.compile_string("""
+        defmodule BadAnonArity3 do
+          use ExGram.Bot, name: :bad_anon_3
+          use ExGram.Router
+
+          scope do
+            handle(fn a, b, c -> c end)
+          end
+        end
+        """)
+      end
+    end
+  end
 end

@@ -12,7 +12,8 @@ defmodule ExGram.Router.Scope do
   """
 
   @type filter :: {module(), term()}
-  @type handler :: {module(), atom(), 1 | 2}
+  @type handler ::
+          {module(), atom(), 1 | 2} | (ExGram.Cnt.t() -> ExGram.Cnt.t()) | (term(), ExGram.Cnt.t() -> ExGram.Cnt.t())
 
   @type t :: %__MODULE__{
           children: [t()],

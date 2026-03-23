@@ -18,14 +18,21 @@ defmodule Mix.Tasks.ExGram.Router.FormatHelpers do
   end
 
   @doc """
-  Formats a `{module, fun, arity}` handler tuple as `&Module.function/arity`.
+  Formats a `{module, fun, arity}` handler tuple as `&Module.function/arity`,
+  or an anonymous function as `fn/N`.
   """
   def format_handler({mod, fun, arity}) do
     "&#{inspect(mod)}.#{fun}/#{arity}"
   end
 
+  def format_handler(handler) when is_function(handler) do
+    {:arity, arity} = Function.info(handler, :arity)
+    "fn/#{arity}"
+  end
+
   @doc """
-  Splits a `{module, fun, arity}` handler tuple into `{module_string, fun_arity_string}`.
+  Splits a `{module, fun, arity}` handler tuple into `{module_string, fun_arity_string}`,
+  or an anonymous function into `{"(anonymous)", "fn/N"}`.
 
   Useful for rendering handlers in two separate columns.
 
@@ -36,6 +43,11 @@ defmodule Mix.Tasks.ExGram.Router.FormatHelpers do
   """
   def split_handler({mod, fun, arity}) do
     {inspect(mod), "#{fun}/#{arity}"}
+  end
+
+  def split_handler(handler) when is_function(handler) do
+    {:arity, arity} = Function.info(handler, :arity)
+    {"(anonymous)", "fn/#{arity}"}
   end
 
   # ---------------------------------------------------------------------------
