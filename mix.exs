@@ -47,7 +47,7 @@ defmodule ExGramRouter.MixProject do
       groups_for_modules: [
         DSL: [ExGram.Router],
         Filters: ~r/ExGram\.Router\.Filter.*/,
-        Core: ~r/ExGram\.Router\.(Compiler|Dispatcher|Scope|DSL)/
+        Core: ~r/ExGram\.Router\.(Compiler|Dispatcher|Scope|Dsl)/
       ]
     ]
   end
